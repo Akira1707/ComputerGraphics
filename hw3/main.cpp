@@ -22,8 +22,8 @@ ID3D11RasterizerState* gRasterState = nullptr;
 ID3D11Buffer* gVB = nullptr;
 ID3D11Buffer* gIB = nullptr;
 
-ID3D11Buffer* gModelBuffer = nullptr;
-ID3D11Buffer* gVPBuffer = nullptr;
+ID3D11Buffer* gModelBuffer = nullptr; 
+ID3D11Buffer* gVPBuffer = nullptr;    
 
 ID3D11VertexShader* gVS = nullptr;
 ID3D11PixelShader* gPS = nullptr;
@@ -32,7 +32,8 @@ ID3D11InputLayout* gLayout = nullptr;
 UINT gWidth = 1280;
 UINT gHeight = 720;
 
-float gAngle = 0.0f;
+float gAngle = 0.0f;        
+float gCameraAngle = 0.0f;  
 
 // Структуры
 struct Vertex
@@ -54,8 +55,20 @@ struct VPBuffer
 // Обработчик окна
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    if (msg == WM_DESTROY)
+    switch (msg)
+    {
+    case WM_DESTROY:
         PostQuitMessage(0);
+        break;
+
+        // Управление камерой
+    case WM_KEYDOWN:
+        if (wParam == 'A')
+            gCameraAngle -= 0.05f;
+        if (wParam == 'D')
+            gCameraAngle += 0.05f;
+        break;
+    }
 
     return DefWindowProc(hWnd, msg, wParam, lParam);
 }
@@ -88,13 +101,13 @@ void InitD3D(HWND hWnd)
         &level,
         &gContext);
 
-    // Создание render target
+    // Render target
     ID3D11Texture2D* backBuffer = nullptr;
     gSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBuffer);
     gDevice->CreateRenderTargetView(backBuffer, nullptr, &gRTV);
     SAFE_RELEASE(backBuffer);
 
-    // Создание depth buffer
+    // Depth buffer
     D3D11_TEXTURE2D_DESC depthDesc{};
     depthDesc.Width = gWidth;
     depthDesc.Height = gHeight;
@@ -109,7 +122,7 @@ void InitD3D(HWND hWnd)
     gDevice->CreateDepthStencilView(depthTex, nullptr, &gDSV);
     SAFE_RELEASE(depthTex);
 
-    // Включение depth test
+    // Depth test
     D3D11_DEPTH_STENCIL_DESC dsDesc{};
     dsDesc.DepthEnable = TRUE;
     dsDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
@@ -118,7 +131,7 @@ void InitD3D(HWND hWnd)
     gDevice->CreateDepthStencilState(&dsDesc, &gDepthState);
     gContext->OMSetDepthStencilState(gDepthState, 0);
 
-    // Отключаем culling 
+    // Отключаем culling
     D3D11_RASTERIZER_DESC rsDesc{};
     rsDesc.FillMode = D3D11_FILL_SOLID;
     rsDesc.CullMode = D3D11_CULL_NONE;
@@ -129,7 +142,7 @@ void InitD3D(HWND hWnd)
 
     gContext->OMSetRenderTargets(1, &gRTV, gDSV);
 
-    // Настройка viewport
+    // Viewport
     D3D11_VIEWPORT vp{};
     vp.Width = (float)gWidth;
     vp.Height = (float)gHeight;
@@ -139,11 +152,9 @@ void InitD3D(HWND hWnd)
 }
 
 // Создание куба
-
-
 void CreateCube()
 {
-    float s = 0.4f;
+    float s = 0.5f;
 
     Vertex vertices[] =
     {
@@ -185,20 +196,28 @@ void CreateCube()
 void CreateConstantBuffers()
 {
     D3D11_BUFFER_DESC bd{};
+
+    // ModelBuffer — DEFAULT
     bd.ByteWidth = sizeof(ModelBuffer);
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    bd.Usage = D3D11_USAGE_DEFAULT;
     gDevice->CreateBuffer(&bd, nullptr, &gModelBuffer);
 
+    // VPBuffer — DYNAMIC
     bd.ByteWidth = sizeof(VPBuffer);
+    bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    bd.Usage = D3D11_USAGE_DYNAMIC;
+    bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     gDevice->CreateBuffer(&bd, nullptr, &gVPBuffer);
 }
 
 // Обновление матриц
+
 void UpdateMatrices()
 {
     gAngle += 0.01f;
 
-    // Вращение по двум осям
+    // Вращение куба
     XMMATRIX m = XMMatrixRotationY(gAngle) *
         XMMatrixRotationX(gAngle * 0.5f);
 
@@ -206,8 +225,15 @@ void UpdateMatrices()
     mb.m = XMMatrixTranspose(m);
     gContext->UpdateSubresource(gModelBuffer, 0, nullptr, &mb, 0, 0);
 
-    // Камера фиксированная
-    XMVECTOR eye = XMVectorSet(0, 2, -5, 0);
+    // Камера вращается вокруг куба
+    float radius = 6.0f;
+
+    XMVECTOR eye = XMVectorSet(
+        radius * sinf(gCameraAngle),
+        2.0f,
+        radius * cosf(gCameraAngle),
+        0);
+
     XMVECTOR at = XMVectorZero();
     XMVECTOR up = XMVectorSet(0, 1, 0, 0);
 
@@ -220,7 +246,11 @@ void UpdateMatrices()
 
     VPBuffer vp;
     vp.vp = XMMatrixTranspose(v * p);
-    gContext->UpdateSubresource(gVPBuffer, 0, nullptr, &vp, 0, 0);
+
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    gContext->Map(gVPBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    memcpy(mapped.pData, &vp, sizeof(VPBuffer));
+    gContext->Unmap(gVPBuffer, 0);
 }
 
 // Создание шейдеров
