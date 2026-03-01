@@ -1,21 +1,18 @@
-﻿// DX11_Final_TexturedCube_Skybox.cpp
-// Requirements:
-// - Windows subsystem (WinMain)
-// - DirectXTK DDSTextureLoader.h/.cpp added to project
-// - Files next to .exe: cube.dds (2D), skybox.dds (cubemap)
-
-#include <windows.h>
+﻿#include <windows.h>
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <DirectXMath.h>
 #include <vector>
 #include <cmath>
+#include <cstring>
+
 #include "DDSTextureLoader.h"
 
 #pragma comment(lib,"d3d11.lib")
 #pragma comment(lib,"d3dcompiler.lib")
 
 using namespace DirectX;
+
 #define SAFE_RELEASE(x) if(x){ (x)->Release(); (x)=nullptr; }
 
 UINT gWidth = 1280, gHeight = 720;
@@ -29,8 +26,8 @@ IDXGISwapChain* gSwapChain = nullptr;
 ID3D11RenderTargetView* gRTV = nullptr;
 ID3D11DepthStencilView* gDSV = nullptr;
 
-ID3D11DepthStencilState* gDepthDefault = nullptr; // depth write ON
-ID3D11DepthStencilState* gDepthSky = nullptr;     // depth write OFF, LESS_EQUAL
+ID3D11DepthStencilState* gDepthDefault = nullptr;
+ID3D11DepthStencilState* gDepthSky = nullptr;
 
 ID3D11RasterizerState* gRasterNoCull = nullptr;
 
@@ -44,9 +41,9 @@ ID3D11Buffer* gSkyIB = nullptr;
 UINT gSkyIndexCount = 0;
 
 // Constant buffers
-ID3D11Buffer* gModelCB = nullptr; // b0 (cube)
-ID3D11Buffer* gVPCB = nullptr;    // b1 (cube)
-ID3D11Buffer* gSkyCB = nullptr;   // b0 (sky)
+ID3D11Buffer* gModelCB = nullptr;
+ID3D11Buffer* gVPCB = nullptr;
+ID3D11Buffer* gSkyCB = nullptr;
 
 // Shaders/layouts
 ID3D11VertexShader* gCubeVS = nullptr;
@@ -64,7 +61,7 @@ ID3D11ShaderResourceView* gSkySRV = nullptr;
 ID3D11SamplerState* gSamplerWrap = nullptr;
 ID3D11SamplerState* gSamplerClamp = nullptr;
 
-// -------------------- Structs --------------------
+// Structs
 struct Vertex
 {
     XMFLOAT3 pos;
@@ -73,14 +70,14 @@ struct Vertex
 
 struct SkyVertex
 {
-    XMFLOAT3 pos; // also acts as direction
+    XMFLOAT3 pos;
 };
 
 struct ModelCB { XMMATRIX m; };
 struct VPCB { XMMATRIX vp; };
 struct SkyCB { XMMATRIX vp; };
 
-// -------------------- Shader compile --------------------
+// Shader compile 
 static ID3DBlob* Compile(const char* code, const char* entry, const char* profile)
 {
     ID3DBlob* blob = nullptr;
@@ -101,7 +98,7 @@ static ID3DBlob* Compile(const char* code, const char* entry, const char* profil
     return blob;
 }
 
-// -------------------- Window proc --------------------
+// Window proc
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
@@ -117,7 +114,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
-// -------------------- Init D3D --------------------
+// Init D3D 
 void InitD3D(HWND hWnd)
 {
     DXGI_SWAP_CHAIN_DESC scd{};
@@ -167,7 +164,6 @@ void InitD3D(HWND hWnd)
     vp.MaxDepth = 1.0f;
     gContext->RSSetViewports(1, &vp);
 
-    // Raster: no cull (inside sphere)
     D3D11_RASTERIZER_DESC rs{};
     rs.FillMode = D3D11_FILL_SOLID;
     rs.CullMode = D3D11_CULL_NONE;
@@ -187,7 +183,7 @@ void InitD3D(HWND hWnd)
     gDevice->CreateDepthStencilState(&ds, &gDepthSky);
 }
 
-// -------------------- Cube geometry --------------------
+// Cube geometry
 void CreateCube()
 {
     float s = 0.5f;
@@ -232,11 +228,13 @@ void CreateCube()
     gDevice->CreateBuffer(&bd, &init, &gCubeIB);
 }
 
-// -------------------- Sky sphere geometry --------------------
+// Sky sphere geometry
 void CreateSkySphere(int slice = 48, int stack = 24)
 {
     std::vector<SkyVertex> verts;
     std::vector<UINT> inds;
+
+    const float R = 50.0f;
 
     for (int i = 0; i <= stack; i++)
     {
@@ -247,7 +245,7 @@ void CreateSkySphere(int slice = 48, int stack = 24)
             float x = sinf(phi) * cosf(theta);
             float y = cosf(phi);
             float z = sinf(phi) * sinf(theta);
-            verts.push_back({ XMFLOAT3(x, y, z) }); // unit sphere
+            verts.push_back({ XMFLOAT3(x * R, y * R, z * R) });
         }
     }
 
@@ -280,7 +278,7 @@ void CreateSkySphere(int slice = 48, int stack = 24)
     gDevice->CreateBuffer(&bd, &init, &gSkyIB);
 }
 
-// -------------------- Constant buffers --------------------
+// Constant buffers 
 void CreateConstantBuffers()
 {
     // ModelCB (DEFAULT)
@@ -313,7 +311,7 @@ void CreateConstantBuffers()
     }
 }
 
-// -------------------- Textures + samplers --------------------
+// Textures 
 void CreateTexturesAndSamplers()
 {
     HRESULT hr = CreateDDSTextureFromFile(gDevice, L"cube.dds", nullptr, &gCubeSRV);
@@ -345,10 +343,9 @@ void CreateTexturesAndSamplers()
     }
 }
 
-// -------------------- Shaders --------------------
+// Shaders 
 void CreateShaders()
 {
-    // Cube shaders
     const char* cubeVS =
         "cbuffer ModelCB:register(b0){matrix m;};"
         "cbuffer VPCB:register(b1){matrix vp;};"
@@ -383,7 +380,6 @@ void CreateShaders()
     SAFE_RELEASE(vsb);
     SAFE_RELEASE(psb);
 
-    // Skybox shaders (no translation in vp, normalize(dir) in PS)
     const char* skyVS =
         "cbuffer SkyCB:register(b0){matrix vp;};"
         "struct VSIn{float3 pos:POSITION;};"
@@ -419,7 +415,7 @@ void CreateShaders()
     SAFE_RELEASE(psb);
 }
 
-// -------------------- Update --------------------
+// Update
 void UpdateMatrices()
 {
     gAngle += 0.01f;
@@ -427,12 +423,12 @@ void UpdateMatrices()
     // Cube model
     XMMATRIX m = XMMatrixRotationY(gAngle) * XMMatrixRotationX(gAngle * 0.5f);
     ModelCB mb{};
-    mb.m = XMMatrixTranspose(m);
+    mb.m = m;
     gContext->UpdateSubresource(gModelCB, 0, nullptr, &mb, 0, 0);
 
     // Camera
     float r = 6.0f;
-    XMVECTOR eye = XMVectorSet(r * sinf(gCameraAngle), 2.0f, r * cosf(gCameraAngle), 0);
+    XMVECTOR eye = XMVectorSet(r * sinf(gCameraAngle), 2.0f, r * cosf(gCameraAngle), 1.0f);
     XMVECTOR at = XMVectorZero();
     XMVECTOR up = XMVectorSet(0, 1, 0, 0);
 
@@ -441,33 +437,32 @@ void UpdateMatrices()
 
     // Cube VP
     VPCB vp{};
-    vp.vp = XMMatrixTranspose(v * p);
+    vp.vp = v * p;
 
     D3D11_MAPPED_SUBRESOURCE mapped{};
     gContext->Map(gVPCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     memcpy(mapped.pData, &vp, sizeof(VPCB));
     gContext->Unmap(gVPCB, 0);
 
-    // Sky VP: remove translation from v
+    // Sky VP
     XMMATRIX vNoTrans = v;
     vNoTrans.r[3] = XMVectorSet(0, 0, 0, 1);
 
     SkyCB sky{};
-    sky.vp = XMMatrixTranspose(vNoTrans * p);
+    sky.vp = vNoTrans * p;
 
     gContext->Map(gSkyCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     memcpy(mapped.pData, &sky, sizeof(SkyCB));
     gContext->Unmap(gSkyCB, 0);
 }
 
-// -------------------- Render --------------------
+// Render 
 void Render()
 {
     float clear[4] = { 0,0,0,1 };
     gContext->ClearRenderTargetView(gRTV, clear);
     gContext->ClearDepthStencilView(gDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
-    // ---- Skybox first ----
     {
         gContext->OMSetDepthStencilState(gDepthSky, 0);
 
@@ -492,7 +487,7 @@ void Render()
         gContext->PSSetShaderResources(0, 1, nullSRV);
     }
 
-    // ---- Cube ----
+    // Cube 
     {
         gContext->OMSetDepthStencilState(gDepthDefault, 0);
 
@@ -521,7 +516,7 @@ void Render()
     gSwapChain->Present(1, 0);
 }
 
-// -------------------- WinMain --------------------
+// WinMain
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 {
     WNDCLASS wc{};
@@ -532,7 +527,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 
     HWND hWnd = CreateWindow(
         wc.lpszClassName,
-        L"Thu Hoai Skybox",
+        L"Thu Hoai_Cube + Skybox",
         WS_OVERLAPPEDWINDOW,
         100, 100, gWidth, gHeight,
         nullptr, nullptr, hInstance, nullptr);
