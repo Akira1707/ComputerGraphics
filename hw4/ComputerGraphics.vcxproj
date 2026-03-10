@@ -107,6 +107,16 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <PostBuildEvent>
+      <Command>if not exist "$(OutDir)Skybox" mkdir "$(OutDir)Skybox"
+copy /Y "$(ProjectDir)cube.dds" "$(OutDir)cube.dds"
+copy /Y "$(ProjectDir)Skybox\posx.png" "$(OutDir)Skybox\posx.png"
+copy /Y "$(ProjectDir)Skybox\negx.png" "$(OutDir)Skybox\negx.png"
+copy /Y "$(ProjectDir)Skybox\posy.png" "$(OutDir)Skybox\posy.png"
+copy /Y "$(ProjectDir)Skybox\negy.png" "$(OutDir)Skybox\negy.png"
+copy /Y "$(ProjectDir)Skybox\posz.png" "$(OutDir)Skybox\posz.png"
+copy /Y "$(ProjectDir)Skybox\negz.png" "$(OutDir)Skybox\negz.png"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -133,6 +143,27 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="ComputerGraphics.ico" />
+    <Image Include="cube.dds">
+      <DeploymentContent>true</DeploymentContent>
+    </Image>
+    <Image Include="Skybox\negx.png">
+      <DeploymentContent>true</DeploymentContent>
+    </Image>
+    <Image Include="Skybox\negy.png">
+      <DeploymentContent>true</DeploymentContent>
+    </Image>
+    <Image Include="Skybox\negz.png">
+      <DeploymentContent>true</DeploymentContent>
+    </Image>
+    <Image Include="Skybox\posx.png">
+      <DeploymentContent>true</DeploymentContent>
+    </Image>
+    <Image Include="Skybox\posy.png">
+      <DeploymentContent>true</DeploymentContent>
+    </Image>
+    <Image Include="Skybox\posz.png">
+      <DeploymentContent>true</DeploymentContent>
+    </Image>
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
