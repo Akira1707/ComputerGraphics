@@ -126,6 +126,10 @@ struct TextureDesc
     UINT32 width = 0;
     UINT32 height = 0;
     void* pData = nullptr;
+
+    std::vector<UINT32> mipPitches;
+    std::vector<size_t> mipOffsets;
+    size_t dataSize = 0;
 };
 
 // Globals
@@ -249,6 +253,8 @@ bool LoadDDS(const wchar_t* filename, TextureDesc& desc)
     desc.width = header.dwWidth;
     desc.height = header.dwHeight;
     desc.mipmapsCount = (header.dwSurfaceFlags & DDS_SURFACE_FLAGS_MIPMAP) ? header.dwMipMapCount : 1;
+    if (desc.mipmapsCount == 0)
+        desc.mipmapsCount = 1;
 
     if (header.ddspf.dwFlags & DDS_FOURCC)
     {
@@ -290,30 +296,51 @@ bool LoadDDS(const wchar_t* filename, TextureDesc& desc)
         return false;
     }
 
-    UINT32 dataSize = 0;
-    if (desc.fmt == DXGI_FORMAT_BC1_UNORM ||
-        desc.fmt == DXGI_FORMAT_BC2_UNORM ||
-        desc.fmt == DXGI_FORMAT_BC3_UNORM)
+    desc.mipPitches.clear();
+    desc.mipOffsets.clear();
+    desc.dataSize = 0;
+
+    UINT32 mipWidth = desc.width;
+    UINT32 mipHeight = desc.height;
+
+    for (UINT32 mip = 0; mip < desc.mipmapsCount; ++mip)
     {
-        UINT32 blockWidth = DivUp(desc.width, 4u);
-        UINT32 blockHeight = DivUp(desc.height, 4u);
-        desc.pitch = blockWidth * GetBytesPerBlock(desc.fmt);
-        dataSize = desc.pitch * blockHeight;
-    }
-    else
-    {
-        desc.pitch = desc.width * BytesPerPixel(desc.fmt);
-        dataSize = desc.pitch * desc.height;
+        UINT32 pitch = 0;
+        size_t mipSize = 0;
+
+        if (desc.fmt == DXGI_FORMAT_BC1_UNORM ||
+            desc.fmt == DXGI_FORMAT_BC2_UNORM ||
+            desc.fmt == DXGI_FORMAT_BC3_UNORM)
+        {
+            UINT32 blockWidth = DivUp(mipWidth, 4u);
+            UINT32 blockHeight = DivUp(mipHeight, 4u);
+            pitch = blockWidth * GetBytesPerBlock(desc.fmt);
+            mipSize = (size_t)pitch * blockHeight;
+        }
+        else
+        {
+            pitch = mipWidth * BytesPerPixel(desc.fmt);
+            mipSize = (size_t)pitch * mipHeight;
+        }
+
+        desc.mipOffsets.push_back(desc.dataSize);
+        desc.mipPitches.push_back(pitch);
+        desc.dataSize += mipSize;
+
+        mipWidth = (mipWidth > 1) ? (mipWidth / 2) : 1;
+        mipHeight = (mipHeight > 1) ? (mipHeight / 2) : 1;
     }
 
-    desc.pData = malloc(dataSize);
+    desc.pitch = desc.mipPitches[0];
+
+    desc.pData = malloc(desc.dataSize);
     if (!desc.pData)
     {
         CloseHandle(hFile);
         return false;
     }
 
-    if (!ReadFile(hFile, desc.pData, dataSize, &dwBytesRead, NULL) || dwBytesRead != dataSize)
+    if (!ReadFile(hFile, desc.pData, (DWORD)desc.dataSize, &dwBytesRead, NULL) || dwBytesRead != desc.dataSize)
     {
         free(desc.pData);
         desc.pData = nullptr;
@@ -963,7 +990,7 @@ void LoadTextures()
     D3D11_TEXTURE2D_DESC tex2DDesc = {};
     tex2DDesc.Width = texDesc.width;
     tex2DDesc.Height = texDesc.height;
-    tex2DDesc.MipLevels = 1;
+    tex2DDesc.MipLevels = texDesc.mipmapsCount;
     tex2DDesc.ArraySize = 1;
     tex2DDesc.Format = texDesc.fmt;
     tex2DDesc.SampleDesc.Count = 1;
@@ -973,12 +1000,16 @@ void LoadTextures()
     tex2DDesc.CPUAccessFlags = 0;
     tex2DDesc.MiscFlags = 0;
 
-    D3D11_SUBRESOURCE_DATA texData = {};
-    texData.pSysMem = texDesc.pData;
-    texData.SysMemPitch = texDesc.pitch;
-    texData.SysMemSlicePitch = 0;
+    std::vector<D3D11_SUBRESOURCE_DATA> texData(texDesc.mipmapsCount);
+    for (UINT32 mip = 0; mip < texDesc.mipmapsCount; ++mip)
+    {
+        texData[mip].pSysMem =
+            reinterpret_cast<const BYTE*>(texDesc.pData) + texDesc.mipOffsets[mip];
+        texData[mip].SysMemPitch = texDesc.mipPitches[mip];
+        texData[mip].SysMemSlicePitch = 0;
+    }
 
-    hr = g_pDevice->CreateTexture2D(&tex2DDesc, &texData, &g_pTexture);
+    hr = g_pDevice->CreateTexture2D(&tex2DDesc, texData.data(), &g_pTexture);
     if (FAILED(hr) || !g_pTexture)
     {
         char err[128];
@@ -992,7 +1023,7 @@ void LoadTextures()
     D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Format = texDesc.fmt;
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = 1;
+    srvDesc.Texture2D.MipLevels = texDesc.mipmapsCount;
     srvDesc.Texture2D.MostDetailedMip = 0;
 
     hr = g_pDevice->CreateShaderResourceView(g_pTexture, &srvDesc, &g_pTextureView);
