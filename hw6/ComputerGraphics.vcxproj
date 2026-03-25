@@ -146,6 +146,7 @@ copy /Y "$(ProjectDir)Skybox\negz.png" "$(OutDir)Skybox\negz.png"</Command>
     <Image Include="cube.dds">
       <DeploymentContent>true</DeploymentContent>
     </Image>
+    <Image Include="cube_normal.png" />
     <Image Include="Skybox\negx.png">
       <DeploymentContent>true</DeploymentContent>
     </Image>

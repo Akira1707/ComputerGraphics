@@ -966,6 +966,8 @@ float4 ps(VSOutput pixel) : SV_Target
 
     float3 nMap = normalTexture.Sample(colorSampler, pixel.uv).xyz;
     nMap = nMap * 2.0f - 1.0f;
+    nMap.xy *= 2.0f;
+    nMap = normalize(nMap);
 
     float3 normal = normalize(nMap.x * T + nMap.y * B + nMap.z * N);
     float3 viewDir = normalize(cameraPos.xyz - pixel.worldPos);
@@ -1236,43 +1238,6 @@ bool CreateTextureFromDesc(const TextureDesc& texDesc, ID3D11Texture2D** ppTex, 
     return true;
 }
 
-bool CreateDefaultNormalTexture(ID3D11Texture2D** ppTex, ID3D11ShaderResourceView** ppSRV)
-{
-    if (!ppTex || !ppSRV) return false;
-
-    const unsigned char normalPixel[4] = { 128, 128, 255, 255 }; // flat normal
-
-    D3D11_TEXTURE2D_DESC desc = {};
-    desc.Width = 1;
-    desc.Height = 1;
-    desc.MipLevels = 1;
-    desc.ArraySize = 1;
-    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    desc.SampleDesc.Count = 1;
-    desc.Usage = D3D11_USAGE_IMMUTABLE;
-    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-
-    D3D11_SUBRESOURCE_DATA initData = {};
-    initData.pSysMem = normalPixel;
-    initData.SysMemPitch = 4;
-
-    HRESULT hr = g_pDevice->CreateTexture2D(&desc, &initData, ppTex);
-    if (FAILED(hr) || !*ppTex)
-        return false;
-
-    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Format = desc.Format;
-    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = 1;
-    srvDesc.Texture2D.MostDetailedMip = 0;
-
-    hr = g_pDevice->CreateShaderResourceView(*ppTex, &srvDesc, ppSRV);
-    if (FAILED(hr) || !*ppSRV)
-        return false;
-
-    return true;
-}
-
 // Load textures
 void LoadTextures()
 {
@@ -1298,25 +1263,20 @@ void LoadTextures()
     // Normal map
     {
         TextureDesc texDesc;
-        if (LoadImageAny(L"cube_normal.png", texDesc))
+        if (!LoadImageAny(L"cube_normal.png", texDesc))
         {
-            if (!CreateTextureFromDesc(texDesc, &g_pNormalTexture, &g_pNormalTextureView))
-            {
-                free(texDesc.pData);
-                MessageBoxA(NULL, "Failed to create normal map texture", "Error", MB_OK);
-                return;
-            }
+            MessageBoxA(NULL, "Failed to load cube_normal.png", "Error", MB_OK);
+            return;
+        }
 
-            free(texDesc.pData);
-        }
-        else
+        if (!CreateTextureFromDesc(texDesc, &g_pNormalTexture, &g_pNormalTextureView))
         {
-            if (!CreateDefaultNormalTexture(&g_pNormalTexture, &g_pNormalTextureView))
-            {
-                MessageBoxA(NULL, "Failed to create default normal texture", "Error", MB_OK);
-                return;
-            }
+            free(texDesc.pData);
+            MessageBoxA(NULL, "Failed to create normal map texture", "Error", MB_OK);
+            return;
         }
+
+        free(texDesc.pData);
     }
 
     // Sampler
